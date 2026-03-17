@@ -378,7 +378,6 @@ def show_category_view():
         st.rerun()
 
 
-# ===== D23 SPLIT PART 1 START: Navigation + dashboard + drug registry =====
 
 # High-Risk Drug Management (Module 23) - integrated from Files/Files/frontend.py
 def show_high_risk_drug_management_module():
@@ -499,8 +498,271 @@ def show_high_risk_drug_management_module():
                             st.error(result.get("message", "Failed to register drug"))
                     else:
                         st.warning("Drug ID and Name are required")
+                elif "Monitoring Requirements" in page:
+        st.markdown("# 🔬 Monitoring Requirements")
+        st.markdown("---")
 
+        drug_filter = st.text_input("Filter by Drug ID", "", key="m23_req_drug_filter")
+        endpoint = f"/api/monitoring-requirements?drug_id={drug_filter}" if drug_filter else "/api/monitoring-requirements"
+        reqs = api_get(endpoint) or [
+            {"req_id": "MR001", "drug_id": "D001", "drug_name": "Warfarin", "monitoring_type": "Laboratory", "escalation_threshold": "INR > 4.0"},
+            {"req_id": "MR003", "drug_id": "D003", "drug_name": "Tacrolimus", "monitoring_type": "TDM", "escalation_threshold": "Trough > 25"},
+        ]
+        st.dataframe(pd.DataFrame(reqs), use_container_width=True, hide_index=True)
 
+    elif "Lab Alerts" in page:
+        st.markdown("# 🚨 Lab Alerts Management")
+        st.markdown("---")
+
+        tab1, tab2, tab3 = st.tabs(["📊 Alert Dashboard", "🔍 Search Alerts", "➕ Create Alert"])
+
+        with tab1:
+            stats = api_get("/api/lab-alerts/stats") or {"total": 5, "by_level": {"Critical": 2}, "by_status": {"Active": 3, "Resolved": 1}}
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Total Alerts", stats.get("total", 0))
+            c2.metric("Critical", stats.get("by_level", {}).get("Critical", 0))
+            c3.metric("Active", stats.get("by_status", {}).get("Active", 0))
+            c4.metric("Resolved", stats.get("by_status", {}).get("Resolved", 0))
+
+            alerts = api_get("/api/lab-alerts") or []
+            if alerts:
+                st.dataframe(pd.DataFrame(alerts), use_container_width=True, hide_index=True)
+
+        with tab2:
+            pid = st.text_input("Search by Patient ID", placeholder="P1021", key="m23_alert_pid")
+            status_sel = st.selectbox("Status Filter", ["All", "Active", "Pending", "Resolved"], key="m23_alert_status")
+            if st.button("Search", key="m23_alert_search"):
+                params = []
+                if pid:
+                    params.append(f"patient_id={pid}")
+                if status_sel != "All":
+                    params.append(f"status={status_sel}")
+                endpoint = "/api/lab-alerts?" + "&".join(params) if params else "/api/lab-alerts"
+                results = api_get(endpoint) or []
+                if results:
+                    st.dataframe(pd.DataFrame(results), use_container_width=True, hide_index=True)
+                else:
+                    st.info("No results")
+
+        with tab3:
+            with st.form("m23_create_alert_form"):
+                c1, c2 = st.columns(2)
+                alert_id = c1.text_input("Alert ID", placeholder="AL005")
+                patient_id = c2.text_input("Patient ID", placeholder="P1021")
+                drug_id = c1.text_input("Drug ID", placeholder="D001")
+                drug_name = c2.text_input("Drug Name", placeholder="Warfarin")
+                test_name = c1.text_input("Test Name", placeholder="INR")
+                result_value = c2.number_input("Result Value", value=0.0, step=0.1)
+                unit = c1.text_input("Unit", placeholder="ratio")
+                normal_range = c2.text_input("Normal Range", placeholder="2.0-3.0")
+                alert_level = st.selectbox("Alert Level", ["Normal", "High", "Critical"], key="m23_alert_level")
+                action = st.text_area("Action Required", height=80)
+                submitted = st.form_submit_button("Create Alert")
+
+                if submitted:
+                    result = api_post(
+                        "/api/lab-alerts",
+                        {
+                            "alert_id": alert_id,
+                            "patient_id": patient_id,
+                            "drug_id": drug_id,
+                            "drug_name": drug_name,
+                            "test_name": test_name,
+                            "result_value": result_value,
+                            "unit": unit,
+                            "normal_range": normal_range,
+                            "alert_level": alert_level,
+                            "status": "Active",
+                            "action_required": action,
+                        },
+                    )
+                    if result.get("status") == "success":
+                        st.success("Alert created")
+                    else:
+                        st.error(result.get("message", "Failed to create alert"))
+
+    elif "Dose Adjustments" in page:
+        st.markdown("# 📋 Dose Adjustment Rules")
+        st.markdown("---")
+
+        tab1, tab2 = st.tabs(["📖 View Rules", "🧮 Evaluate Dose"])
+
+        with tab1:
+            adjs = api_get("/api/dose-adjustments") or []
+            if adjs:
+                st.dataframe(pd.DataFrame(adjs), use_container_width=True, hide_index=True)
+            else:
+                st.info("No rules found")
+
+        with tab2:
+            with st.form("m23_dose_eval_form"):
+                c1, c2 = st.columns(2)
+                pid = c1.text_input("Patient ID", value="P1021")
+                drug_id_eval = c2.selectbox("Drug", ["D001", "D002", "D003"], key="m23_dose_drug")
+                lab_test = c1.text_input("Lab Test", placeholder="INR")
+                result_val = c2.number_input("Lab Result Value", value=5.2, step=0.1)
+                if st.form_submit_button("Evaluate"):
+                    result = api_post(
+                        "/api/dose-adjustments/evaluate",
+                        {
+                            "patient_id": pid,
+                            "drug_id": drug_id_eval,
+                            "lab_test": lab_test,
+                            "result_value": result_val,
+                        },
+                    )
+                    if result.get("status") == "success":
+                        raw_data = result.get("data")
+                        suggestions = []
+                        if isinstance(raw_data, dict):
+                            suggestions = raw_data.get("suggestions", [])
+                        if suggestions:
+                            st.dataframe(pd.DataFrame(suggestions), use_container_width=True, hide_index=True)
+                        else:
+                            st.info("No suggestion generated")
+    elif "Monitoring Schedules" in page:
+        st.markdown("# 📅 Monitoring Schedules")
+        st.markdown("---")
+
+        tab1, tab2, tab3 = st.tabs(["📋 View Schedules", "⏰ Overdue", "🗓️ Generate Schedule"])
+
+        with tab1:
+            pid_filter = st.text_input("Filter by Patient ID", "", key="m23_sched_pid")
+            status_filter = st.selectbox("Status", ["All", "Upcoming", "Due Soon", "Overdue", "Scheduled", "Completed"], key="m23_sched_status")
+            params = []
+            if pid_filter:
+                params.append(f"patient_id={pid_filter}")
+            if status_filter != "All":
+                params.append(f"status={status_filter}")
+            endpoint = "/api/monitoring-schedules?" + "&".join(params) if params else "/api/monitoring-schedules"
+            schedules = api_get(endpoint) or []
+            if schedules:
+                st.dataframe(pd.DataFrame(schedules), use_container_width=True, hide_index=True)
+            else:
+                st.info("No schedules found")
+
+        with tab2:
+            overdue = api_get("/api/procedures/overdue-schedules") or {"overdue_count": 0, "schedules": []}
+            st.metric("Total Overdue", overdue.get("overdue_count", 0))
+            if overdue.get("schedules"):
+                st.dataframe(pd.DataFrame(overdue.get("schedules", [])), use_container_width=True, hide_index=True)
+
+        with tab3:
+            with st.form("m23_gen_schedule_form"):
+                c1, c2 = st.columns(2)
+                pid_gen = c1.text_input("Patient ID", value="P1099")
+                drug_id_gen = c2.selectbox("Drug", ["D001", "D002", "D003"], key="m23_gen_drug")
+                mode = st.radio("Schedule Mode", ["Standard", "Temporal (Intensive at start)"], horizontal=True)
+                if st.form_submit_button("Generate Schedule"):
+                    endpoint = "/api/procedures/temporal-schedule" if mode == "Temporal (Intensive at start)" else "/api/monitoring-schedules/generate"
+                    result = api_post(endpoint, {"patient_id": pid_gen, "drug_id": drug_id_gen})
+                    if result.get("status") == "success":
+                        st.success("Schedule generated")
+                        st.json(result.get("data", {}))
+
+    elif "SQL" in page:
+        st.markdown("# ⚙️ SQL Queries, Triggers & Stored Procedures")
+        st.markdown("---")
+
+        tab1, tab2, tab3 = st.tabs(["📊 Queries", "🔫 Triggers", "📦 Stored Procedures"])
+
+        with tab1:
+            st.code(
+                """
+SELECT * FROM lab_alerts
+WHERE status = 'Active'
+  AND alert_level = 'Critical'
+ORDER BY created_at DESC;
+""",
+                language="sql",
+            )
+        with tab2:
+            st.code(
+                """
+CREATE TRIGGER after_lab_alert_insert
+AFTER INSERT ON lab_alerts
+FOR EACH ROW
+BEGIN
+  IF NEW.alert_level = 'Critical' THEN
+    INSERT INTO audit_log (event, patient_id, drug, message, timestamp)
+    VALUES ('CRITICAL_ALERT_ESCALATION', NEW.patient_id, NEW.drug_name, CONCAT('Auto-escalated: ', NEW.test_name), NOW());
+  END IF;
+END;
+""",
+                language="sql",
+            )
+        with tab3:
+            st.code(
+                """
+CREATE PROCEDURE evaluate_alert_conditions(
+    IN p_patient_id VARCHAR(20),
+    IN p_drug_id VARCHAR(10),
+    IN p_lab_results JSON
+)
+BEGIN
+  -- Compare lab values with thresholds and generate alerts
+END;
+""",
+                language="sql",
+            )
+
+    elif "Integration" in page:
+        st.markdown("# 🔗 Module Integration")
+        st.markdown("---")
+        tab1, tab2, tab3 = st.tabs(["← From Module 21 & 22", "→ To Module 24 & 25", "🧪 Test Integration"])
+
+        with tab1:
+            st.markdown("### Inputs from Module 21 and Module 22")
+            st.write("Module 21: patient demographics, renal/liver status, allergies, weight")
+            st.write("Module 22: active prescriptions, drug + dose, start date, physician")
+
+        with tab2:
+            st.markdown("### Outputs to Module 24 and Module 25")
+            st.write("Module 24: monitoring alerts, risk summary, dose recommendations")
+            st.write("Module 25: critical alert escalation, adverse event details")
+
+        with tab3:
+            pid_test = st.text_input("Patient ID to test", value="P1021", key="m23_integration_pid")
+            c1, c2, c3 = st.columns(3)
+            if c1.button("Fetch from M21", key="m23_fetch_m21"):
+                result = api_get(f"/api/integration/patient/{pid_test}")
+                st.json(result if result else {"message": "M21 unavailable"})
+            if c2.button("Fetch from M22", key="m23_fetch_m22"):
+                result = api_get(f"/api/integration/prescriptions/{pid_test}")
+                st.json(result if result else {"message": "M22 unavailable"})
+            if c3.button("Provide to M24/M25", key="m23_provide_m24_m25"):
+                result = api_get(f"/api/integration/provide/monitoring-data/{pid_test}")
+                st.json(result if result else {"message": "No data"})
+
+    elif "Audit" in page:
+        st.markdown("# 📜 Audit Log")
+        st.markdown("---")
+        logs = api_get("/api/audit-log") or [
+            {"action": "CREATE_ALERT", "detail": {"alert_id": "AL003"}, "timestamp": "2026-03-18T09:15:00"},
+            {"action": "CRITICAL_ALERT_ESCALATION", "detail": {"patient_id": "P1056"}, "timestamp": "2026-03-18T09:16:00"},
+        ]
+        st.dataframe(pd.DataFrame(logs), use_container_width=True, hide_index=True)
+
+def show_module_detail():
+    code, name, desc, tables, records = st.session_state.selected_module
+    cat_key = st.session_state.selected_category
+    
+    # Breadcrumb
+    st.markdown(f"Category {cat_key.split('-')[0].strip()} > {name}")
+    st.markdown(f"# {name}")
+    st.markdown(f"*{desc}*")
+
+    # High-Risk Drug Management (Module 23)
+    is_high_risk_module = (
+        code in {"C5", "D5"}
+        or "high-risk drug monitoring" in name.lower()
+    )
+    if is_high_risk_module:
+        show_high_risk_drug_management_module()
+        st.divider()
+        if st.button("⬅ Back to Modules", key="back_from_m23"):
+            st.session_state.view = "category"
+            st.rerun()
 
     
     
