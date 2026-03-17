@@ -1,8 +1,34 @@
 # dashboards/doctor_dashboard.py
 import streamlit as st
+import requests
+import pandas as pd
 from components.sidebar import sidebar
 from components.charts import patient_line_chart, appointment_donut_chart
 import matplotlib.pyplot as plt
+
+API_BASE = "http://127.0.0.1:5023"
+
+def api_get(endpoint):
+    try:
+        r = requests.get(f"{API_BASE}{endpoint}", timeout=5)
+        if r.status_code == 200:
+            body = r.json()
+            if isinstance(body, dict):
+                return body.get("data", {})
+        return None
+    except Exception:
+        return None
+
+
+def api_post(endpoint, payload):
+    try:
+        r = requests.post(f"{API_BASE}{endpoint}", json=payload, timeout=5)
+        body = r.json()
+        if isinstance(body, dict):
+            return body
+        return {"status": "error", "message": "Invalid response format"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 # All categories and their modules
 CATEGORIES = {
@@ -351,14 +377,132 @@ def show_category_view():
         st.session_state.view = "main"
         st.rerun()
 
-def show_module_detail():
-    code, name, desc, tables, records = st.session_state.selected_module
-    cat_key = st.session_state.selected_category
+
+# ===== D23 SPLIT PART 1 START: Navigation + dashboard + drug registry =====
+
+# High-Risk Drug Management (Module 23) - integrated from Files/Files/frontend.py
+def show_high_risk_drug_management_module():
+    page = st.selectbox(
+        "Module 23 Navigation",
+        [
+            "🏠 Master Dashboard",
+            "💊 Drug Registry",
+            "🔬 Monitoring Requirements",
+            "🚨 Lab Alerts",
+            "📋 Dose Adjustments",
+            "📅 Monitoring Schedules",
+            "⚙️ SQL Queries & Triggers",
+            "🔗 Module Integration",
+            "📜 Audit Log",
+        ],
+        key="m23_nav",
+    )
+
+    health = api_get("/health")
+    if health:
+        st.success("Module 23 API connected")
+    else:
+        st.warning("Module 23 API not reachable. Showing fallback demo data.")
+
+    st.divider()
+
+    if "Dashboard" in page:
+        st.markdown("# ⚠️ High-Risk Drug Monitoring System")
+        st.markdown("**Module 23** | Category: Pharmacy & Clinical Safety")
+        st.markdown("---")
+
+        stats = api_get("/api/dashboard/stats") or {
+            "total_high_risk_drugs": 6,
+            "active_alerts": 3,
+            "critical_alerts": 2,
+            "overdue_monitoring": 1,
+            "monitoring_requirements": 3,
+        }
+
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("High-Risk Drugs", stats.get("total_high_risk_drugs", 0))
+        c2.metric("Active Alerts", stats.get("active_alerts", 0))
+        c3.metric("Critical Alerts", stats.get("critical_alerts", 0))
+        c4.metric("Overdue Tests", stats.get("overdue_monitoring", 0))
+        c5.metric("Protocols", stats.get("monitoring_requirements", 0))
+
+        st.markdown("### 🚨 Active Lab Alerts")
+        alerts = api_get("/api/lab-alerts?status=Active") or [
+            {
+                "alert_id": "AL001",
+                "patient_id": "P1021",
+                "drug_name": "Warfarin",
+                "test_name": "INR",
+                "result_value": 5.2,
+                "alert_level": "Critical",
+                "action_required": "Hold warfarin, give Vitamin K",
+            },
+            {
+                "alert_id": "AL002",
+                "patient_id": "P1034",
+                "drug_name": "Methotrexate",
+                "test_name": "ANC",
+                "result_value": 750,
+                "alert_level": "High",
+                "action_required": "Hold MTX, repeat CBC",
+            },
+        ]
+        st.dataframe(pd.DataFrame(alerts), use_container_width=True, hide_index=True)
+
+    elif "Drug Registry" in page:
+        st.markdown("# 💊 High-Risk Drug Registry")
+        st.markdown("---")
+
+        tab1, tab2 = st.tabs(["📋 View Drugs", "➕ Add Drug"])
+
+        with tab1:
+            cat_filter = st.selectbox("Filter by Category", ["All", "Anticoagulant", "Chemotherapy", "Immunosuppressant"], key="m23_drug_filter")
+            endpoint = f"/api/drugs?category={cat_filter}" if cat_filter != "All" else "/api/drugs"
+            drugs = api_get(endpoint) or [
+                {"drug_id": "D001", "name": "Warfarin", "category": "Anticoagulant", "risk_level": "High"},
+                {"drug_id": "D002", "name": "Methotrexate", "category": "Chemotherapy", "risk_level": "Critical"},
+                {"drug_id": "D003", "name": "Tacrolimus", "category": "Immunosuppressant", "risk_level": "High"},
+            ]
+            st.dataframe(pd.DataFrame(drugs), use_container_width=True, hide_index=True)
+
+        with tab2:
+            with st.form("m23_add_drug_form"):
+                c1, c2 = st.columns(2)
+                drug_id = c1.text_input("Drug ID *", placeholder="D007")
+                name = c2.text_input("Drug Name *", placeholder="Rivaroxaban")
+                generic_name = c1.text_input("Generic Name", placeholder="Rivaroxaban")
+                category = c2.selectbox("Category", ["Anticoagulant", "Chemotherapy", "Immunosuppressant", "Other"], key="m23_add_cat")
+                risk_level = c1.selectbox("Risk Level", ["High", "Critical", "Moderate"], key="m23_add_risk")
+                mechanism = st.text_area("Mechanism of Action", height=80)
+                dose_range = c2.text_input("Typical Dose Range", placeholder="10-20 mg/day")
+                black_box = st.checkbox("Black Box Warning")
+                submitted = st.form_submit_button("Register Drug")
+
+                if submitted:
+                    if drug_id and name:
+                        result = api_post(
+                            "/api/drugs",
+                            {
+                                "drug_id": drug_id,
+                                "name": name,
+                                "generic_name": generic_name,
+                                "category": category,
+                                "risk_level": risk_level,
+                                "mechanism": mechanism,
+                                "typical_dose_range": dose_range,
+                                "black_box_warning": black_box,
+                            },
+                        )
+                        if result.get("status") == "success":
+                            st.success(f"Drug {name} registered successfully")
+                        else:
+                            st.error(result.get("message", "Failed to register drug"))
+                    else:
+                        st.warning("Drug ID and Name are required")
+
+
+
     
-    # Breadcrumb
-    st.markdown(f"Category {cat_key.split('-')[0].strip()} > {name}")
-    st.markdown(f"# {name}")
-    st.markdown(f"*{desc}*")
     
     # Tabs
     tab = st.radio("", ["🏠 Home", "🔗 ER Diagram", "📋 Tables", "🔍 SQL Query", "⚡ Triggers", "📊 Output"], horizontal=True)
