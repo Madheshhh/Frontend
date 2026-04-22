@@ -7,7 +7,18 @@ from components.sidebar import sidebar
 from components.charts import patient_line_chart, appointment_donut_chart
 import matplotlib.pyplot as plt
 
-API_BASE = st.secrets.get("API_BASE_URL", os.environ.get("API_BASE_URL", "http://127.0.0.1:5023"))
+
+def _resolve_api_base_url():
+    env_value = os.environ.get("API_BASE_URL")
+    if env_value:
+        return env_value
+    try:
+        return st.secrets.get("API_BASE_URL", "http://127.0.0.1:5023")
+    except Exception:
+        return "http://127.0.0.1:5023"
+
+
+API_BASE = _resolve_api_base_url()
 
 def api_get(endpoint):
     try:
