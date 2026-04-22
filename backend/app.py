@@ -343,5 +343,6 @@ def _notify_module_25(alert_doc):
 if __name__ == "__main__":
     create_indexes()
     seed_data()
-    print("Module 23 API running on port 5023")
-    app.run(host="0.0.0.0", port=5023, debug=True)
+    port = int(os.environ.get("PORT", 5023))
+    print(f"Module 23 API running on port {port}")
+    app.run(host="0.0.0.0", port=port, debug=False)
