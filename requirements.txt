@@ -1,3 +1,9 @@
 streamlit
 streamlit-option-menu
 matplotlib
+pandas
+requests
+flask
+flask-cors
+pymongo
+mongomock
