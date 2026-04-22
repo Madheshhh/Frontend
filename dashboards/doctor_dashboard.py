@@ -1,4 +1,5 @@
 # dashboards/doctor_dashboard.py
+import os
 import streamlit as st
 import requests
 import pandas as pd
@@ -6,7 +7,7 @@ from components.sidebar import sidebar
 from components.charts import patient_line_chart, appointment_donut_chart
 import matplotlib.pyplot as plt
 
-API_BASE = "http://127.0.0.1:5023"
+API_BASE = st.secrets.get("API_BASE_URL", os.environ.get("API_BASE_URL", "http://127.0.0.1:5023"))
 
 def api_get(endpoint):
     try:
@@ -498,7 +499,8 @@ def show_high_risk_drug_management_module():
                             st.error(result.get("message", "Failed to register drug"))
                     else:
                         st.warning("Drug ID and Name are required")
-                elif "Monitoring Requirements" in page:
+
+    elif "Monitoring Requirements" in page:
         st.markdown("# 🔬 Monitoring Requirements")
         st.markdown("---")
 
@@ -763,6 +765,7 @@ def show_module_detail():
         if st.button("⬅ Back to Modules", key="back_from_m23"):
             st.session_state.view = "category"
             st.rerun()
+        return
 
     
     
