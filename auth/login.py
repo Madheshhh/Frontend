@@ -13,6 +13,18 @@ def login_page():
             st.session_state.logged_in = True
             st.session_state.role = role
             st.session_state.page = "dashboard"
+
+            if role == "Doctor":
+                st.session_state.view = "module"
+                st.session_state.selected_category = "C - Pharmacy & Medications"
+                st.session_state.selected_module = (
+                    "C5",
+                    "High-Risk Drug Monitoring",
+                    "Critical medication tracking",
+                    5,
+                    8700,
+                )
+
             st.rerun()
         else:
             st.error("Please enter email and password")
